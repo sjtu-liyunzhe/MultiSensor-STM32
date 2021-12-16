@@ -338,7 +338,7 @@ void IMU_task(void *pvParameters)
 		GetMPUData(2, &data2);
 		GetMPUData(3, &data3);
 		// taskEXIT_CRITICAL();            //退出临界区
-		delay_ms(1);// 保证freeRTOS能够正常进行系统级别的任务切换，最小是1ms的间隔
+		
 //		// 打印数据
 		// if((t % 2) == 0)
 		// {
@@ -351,7 +351,9 @@ void IMU_task(void *pvParameters)
 		IMUSendData(1, &data1);
 		IMUSendData(2, &data2);
 		IMUSendData(3, &data3);
-		t++;
+		
+		delay_ms(1);// 保证freeRTOS能够正常进行系统级别的任务切换，最小是1ms的间隔
+		// t++;
 	}
 }
 

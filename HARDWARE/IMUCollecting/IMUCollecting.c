@@ -36,17 +36,17 @@ void GetMPUData(int imuNum, struct mpuData *data)
 	default:
 		break;
 	}
-	taskEXIT_CRITICAL();            //退出临界区
-	delay_ms(1);
-	taskENTER_CRITICAL();           //进入临界区
+	// taskEXIT_CRITICAL();            //退出临界区
+	// delay_ms(1);
+	// taskENTER_CRITICAL();           //进入临界区
 	data->temp = MPU_Get_Temperature(imuNum);
-	taskEXIT_CRITICAL();            //退出临界区
-	delay_ms(1);
-	taskENTER_CRITICAL();           //进入临界区
+	// taskEXIT_CRITICAL();            //退出临界区
+	// delay_ms(1);
+	// taskENTER_CRITICAL();           //进入临界区
 	MPU_Get_Accelerometer(imuNum, &(data->accx), &(data->aacy), &(data->aacz));
-	taskEXIT_CRITICAL();            //退出临界区
-	delay_ms(1);
-	taskENTER_CRITICAL();           //进入临界区
+	// taskEXIT_CRITICAL();            //退出临界区
+	// delay_ms(1);
+	// taskENTER_CRITICAL();           //进入临界区
 	MPU_Get_Gyroscope(imuNum, &(data->gyrox), &(data->gyrox), &(data->gyroz));
 	taskEXIT_CRITICAL();            //退出临界区
 	delay_ms(1);
@@ -108,9 +108,9 @@ void usart3_SendPackage(u8 *data_buffer, u16 bytes_num)
 // data:数据缓存区,最多28字节
 // 多字节数据高位在前
 // len:data区有效数据个数
+u8 send_buf[32];    // 定义为全局变量，局部变量会爆内存
 void usart3_Report(u8 fun, u8 *data, u8 len)
 {
-	u8 send_buf[32];
 	u8 i;
 	if(len > 28)
 		return;
@@ -129,10 +129,10 @@ void usart3_Report(u8 fun, u8 *data, u8 len)
 	usart3_SendPackage(send_buf, len + 4);
 }
 // roll, pitch , yaw *100 分别化成整数发送
+u8 tbuf[18];
 void IMUSendData(int imuNum, struct mpuData *data)
 {
 	// data字节数9 * 2
-	u8 tbuf[18];
 	u16 intRoll = (int)(100 * (data->roll));
 	u16 intPitch = (int)(100 * (data->pitch));
 	u16 intYaw = (int)(100 * (data->yaw));
