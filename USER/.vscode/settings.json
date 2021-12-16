@@ -1,0 +1,13 @@
+{
+    "files.associations": {
+        "usart.h": "c",
+        "sys.h": "c",
+        "matrix.h": "c",
+        "emgprocessing.h": "c",
+        "bf.h": "c",
+        "pulser.h": "c",
+        "usart_3.h": "c",
+        "led.h": "c",
+        "imucollecting.h": "c"
+    }
+}

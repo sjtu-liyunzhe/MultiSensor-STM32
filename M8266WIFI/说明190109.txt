@@ -1,0 +1,5 @@
+2019.1.9
+
+WIFI_Send--ref.c是对原来的test_m8266wifi.c进行整理（换变量名、排版）后的文件，用于参考写wifi的相关功能
+
+WIFI_Old.c是2018.11.22自己写的wifi文件，把建立套接字链接和发送数据分开成两个函数。但是丢帧问题很大。后面发现是因为使用了M8266WIFI_SPI_Send_Data()发送所以丢帧严重。修改为使用M8266WIFI_SPI_Send_Data_Block()发送后，基本不丢帧

@@ -1,0 +1,43 @@
+#ifndef __ADC_H
+#define __ADC_H
+#include "sys.h"
+//////////////////////////////////////////////////////////////////////////////////
+//本程序只供学习使用，未经作者许可，不得用于其它任何用途
+//ALIENTEK STM32F7开发板
+//ADC驱动代码
+//正点原子@ALIENTEK
+//技术论坛:www.openedv.com
+//创建日期:2015/12/26
+//版本：V1.0
+//版权所有，盗版必究。
+//Copyright(C) 广州市星翼电子科技有限公司 2014-2024
+//All rights reserved
+//////////////////////////////////////////////////////////////////////////////////
+
+  extern u8 FIFO_buffer[1000];
+#include "stm32f7xx.h"
+
+// ADC GPIO 宏定义
+#define RHEOSTAT_ADC_GPIO_PORT              GPIOA
+#define RHEOSTAT_ADC_GPIO_PIN               GPIO_PIN_1
+#define RHEOSTAT_ADC_GPIO_CLK_ENABLE()      __GPIOC_CLK_ENABLE()
+
+// ADC 序号宏定义
+#define RHEOSTAT_ADC                        ADC1
+#define RHEOSTAT_ADC_CLK_ENABLE()           __ADC1_CLK_ENABLE()
+#define RHEOSTAT_ADC_CHANNEL                ADC_CHANNEL_1
+
+// ADC DR寄存器宏定义，ADC转换后的数字值则存放在这里
+#define RHEOSTAT_ADC_DR_ADDR                ((uint32_t)ADC1+0x4c)
+
+// ADC DMA 通道宏定义，这里我们使用DMA传输
+#define RHEOSTAT_ADC_DMA_CLK_ENABLE()       __DMA2_CLK_ENABLE()
+#define RHEOSTAT_ADC_DMA_CHANNEL            DMA_CHANNEL_0
+#define RHEOSTAT_ADC_DMA_STREAM             DMA2_Stream0
+
+
+
+void Rheostat_Init(void);
+void FIFO_read(u16 times,u8 Ch_Num);
+#endif /* __BSP_ADC_H */
+
