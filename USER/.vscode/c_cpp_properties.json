@@ -35,6 +35,7 @@
                 "D:\\Keil_v5\\ARM\\ARMCC\\include",
                 "D:\\Keil_v5\\ARM\\ARMCC\\include\\rw",
                 "e:\\2021-2022\\1216\\Mutisensor-STM32-1216\\HALLIB\\Src",
+                "e:\\2021-2022\\1216\\Mutisensor-STM32-1216\\HARDWARE\\CQUEUE",
                 "e:\\2021-2022\\1216\\Mutisensor-STM32-1216\\FreeRTOS",
                 "e:\\2021-2022\\1216\\Mutisensor-STM32-1216\\FreeRTOS\\portable\\MemMang"
             ],

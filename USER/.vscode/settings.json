@@ -8,6 +8,7 @@
         "pulser.h": "c",
         "usart_3.h": "c",
         "led.h": "c",
-        "imucollecting.h": "c"
+        "imucollecting.h": "c",
+        "cqueue.h": "c"
     }
 }

@@ -899,6 +899,11 @@
               <FileType>1</FileType>
               <FilePath>..\HARDWARE\LED\led.c</FilePath>
             </File>
+            <File>
+              <FileName>cQueue.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\CQUEUE\cQueue.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

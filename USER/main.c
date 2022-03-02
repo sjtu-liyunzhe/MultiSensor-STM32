@@ -48,6 +48,8 @@
 #include "inv_mpu_dmp_motion_driver_3.h"
 #include "IMUCollecting.h"
 
+
+// 
 PLN_FILER plnf[4]; 
 int index_plnf;
 int initial_PLF(PLN_FILER *x); //声明滤波函数
@@ -176,8 +178,8 @@ int main(void)
 	startDev(2);								
 									
 	/**************** IMU 部分初始化 *************************/
-	// uart3_init(115200);				// 初始化串口115200
-	uart3_init(500000);
+	uart3_init(115200);				// 初始化串口115200
+//	uart3_init(500000);
 	// usmart_init(72);                // USMART初始化
 	printf("MPU6050 TEST\r\n");
 	MPU_IIC_Init();					// 初始化IIC总线
