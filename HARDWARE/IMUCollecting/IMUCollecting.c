@@ -13,12 +13,23 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "delay.h"
+#include "semphr.h"
 
+#include "cQueue.h"
+
+extern SemaphoreHandle_t xSemaphore_IMU;
 extern int temp;
+extern IMULinkQueue* imuLinkQueue_0, * imuLinkQueue_1, * imuLinkQueue_2, * imuLinkQueue_3;
+extern IMULinkQueue** imuLinkQueueArray;
+extern volatile IMUCircleQueue* IMUCircleQueueArray[4];
+extern uint8_t errorMessage[66];
+#ifndef ERROR_PACKAGE_SIZE
+#define ERROR_PACKAGE_SIZE 66
+#endif // !1
 
 void GetMPUData(int imuNum, struct mpuData *data)
 {
-	taskENTER_CRITICAL();           //进入临界区
+	// taskENTER_CRITICAL();           //进入临界区
 	switch (imuNum)
 	{
 	case 0:
@@ -36,33 +47,39 @@ void GetMPUData(int imuNum, struct mpuData *data)
 	default:
 		break;
 	}
-	// taskEXIT_CRITICAL();            //退出临界区
-	// delay_ms(1);
-	// taskENTER_CRITICAL();           //进入临界区
-	data->temp = MPU_Get_Temperature(imuNum);
-	// taskEXIT_CRITICAL();            //退出临界区
-	// delay_ms(1);
-	// taskENTER_CRITICAL();           //进入临界区
-	MPU_Get_Accelerometer(imuNum, &(data->accx), &(data->aacy), &(data->aacz));
-	// taskEXIT_CRITICAL();            //退出临界区
-	// delay_ms(1);
-	// taskENTER_CRITICAL();           //进入临界区
-	MPU_Get_Gyroscope(imuNum, &(data->gyrox), &(data->gyrox), &(data->gyroz));
-	taskEXIT_CRITICAL();            //退出临界区
 	delay_ms(1);
+	// int temp = data->pitch * 10;
+	// printf("%d,   ", data->pitch);
+	MPU_Get_Accelerometer(imuNum, &(data->accx), &(data->aacy), &(data->aacz));
+	// delay_ms(50);
+	delay_ms(1);
+	MPU_Get_Gyroscope(imuNum, &(data->gyrox), &(data->gyrox), &(data->gyroz));
+	delay_ms(1);
+	// taskENTER_CRITICAL();           //进入临界区
+	// data->temp = MPU_Get_Temperature(imuNum);
+	// taskEXIT_CRITICAL();            //退出临界区
+	// delay_ms(1);
+	// taskENTER_CRITICAL();           //进入临界区
+	
+	// taskEXIT_CRITICAL();            //退出临界区
+	// delay_ms(1);
+	// taskENTER_CRITICAL();           //进入临界区
+	
+	// taskEXIT_CRITICAL();            //退出临界区
+	// delay_ms(1);
 }
 //
 void PrintData(int imuNum, struct mpuData *data)
 {
 	// 温度值
-	temp = data->temp;
-	if(temp < 0)
-	{
-		temp = -temp;
-		printf("Temp_%d:  -%d.%dC\r\n", imuNum, temp / 100, temp % 10);
-	}
-	else
-		printf("Temp_%d:  %d.%dC\r\n", imuNum, temp / 100, temp % 10);
+	// temp = data->temp;
+	// if(temp < 0)
+	// {
+	// 	temp = -temp;
+	// 	printf("Temp_%d:  -%d.%dC\r\n", imuNum, temp / 100, temp % 10);
+	// }
+	// else
+	// 	printf("Temp_%d:  %d.%dC\r\n", imuNum, temp / 100, temp % 10);
 	// Pitch值
 	temp = data->pitch * 10;
 	if(temp < 0)
@@ -158,3 +175,63 @@ void IMUSendData(int imuNum, struct mpuData *data)
 	// 0 : 0xA1; 1 : 0xA2; 2 : 0xA3; 3 : 0xA4
 	usart3_Report((imuNum + 1) | 0xA0, tbuf, 18);
 }
+void IMUSaveData(int imuNum, mpuData* data)
+{
+	int16_t tempRoll = 100 * data->roll;
+	int16_t tempPitch = 100 * data->pitch;
+	int16_t tempYaw = 100 * data->yaw;
+	if(!pushCircleQueue(IMUCircleQueueArray[imuNum]->rowQueue, tempRoll))
+	{
+		printf("imu rowQueue[%d] push fails", imuNum);
+		usart3_SendPackage(errorMessage, ERROR_PACKAGE_SIZE);
+	}
+	if(!pushCircleQueue(IMUCircleQueueArray[imuNum]->pitchQueue, tempPitch))
+	{
+		printf("imu pitchQueue[%d] push fails", imuNum);
+		usart3_SendPackage(errorMessage, ERROR_PACKAGE_SIZE);
+	}
+	if(!pushCircleQueue(IMUCircleQueueArray[imuNum]->yawQueue, tempYaw))
+	{
+		printf("imu yawQueue[%d] push fails", imuNum);
+		usart3_SendPackage(errorMessage, ERROR_PACKAGE_SIZE);
+	}
+	// if(imuNum == 0)
+		// printf("imu size: %d \r\n", IMUCircleQueueArray[imuNum]->rowQueue->size);
+}
+// void IMUSaveData(int imuNum, mpuData* data)
+// {
+// 	int16_t tempRoll = 100 * data->roll;
+// 	int16_t tempPitch = 100 * data->pitch;
+// 	int16_t tempYaw = 100 * data->yaw;
+// 	if(!pushLinkQueue(imuLinkQueueArray[imuNum]->rowQueue, tempRoll))
+// 		printf("imu rowQueue[%d] push fails", imuNum);
+// 	if(!pushLinkQueue(imuLinkQueueArray[imuNum]->pitchQueue, tempPitch))
+// 		printf("imu pitchQueue[%d] push fails", imuNum);
+// 	if(!pushLinkQueue(imuLinkQueueArray[imuNum]->yawQueue, tempYaw))
+// 		printf("imu yawQueue[%d] push fails", imuNum);
+// 	// switch (imuNum)
+// 	// {
+// 	// 	case 0:
+// 	// 		pushLinkQueue(imuLinkQueue_0->rowQueue, tempRoll);
+// 	// 		pushLinkQueue(imuLinkQueue_0->pitchQueue, tempPitch);
+// 	// 		pushLinkQueue(imuLinkQueue_0->yawQueue, tempRoll);
+// 	// 		break;
+// 	// 	case 1:
+// 	// 		pushLinkQueue(imuLinkQueue_1->rowQueue, tempRoll);
+// 	// 		pushLinkQueue(imuLinkQueue_1->pitchQueue, tempPitch);
+// 	// 		pushLinkQueue(imuLinkQueue_1->yawQueue, tempRoll);
+// 	// 		break;
+// 	// 	case 2:
+// 	// 		pushLinkQueue(imuLinkQueue_2->rowQueue, tempRoll);
+// 	// 		pushLinkQueue(imuLinkQueue_2->pitchQueue, tempPitch);
+// 	// 		pushLinkQueue(imuLinkQueue_2->yawQueue, tempRoll);
+// 	// 		break;
+// 	// 	case 3:
+// 	// 		pushLinkQueue(imuLinkQueue_3->rowQueue, tempRoll);
+// 	// 		pushLinkQueue(imuLinkQueue_3->pitchQueue, tempPitch);
+// 	// 		pushLinkQueue(imuLinkQueue_3->yawQueue, tempRoll);
+// 	// 		break;
+// 	// 	default:
+// 	// 		break;
+// 	// }
+// }

@@ -1,6 +1,8 @@
 //FreeRTOS相关
 #include "FreeRTOS.h"
+#include "timers.h"
 #include "task.h"
+#include "semphr.h"
 
 //A超模块部分
 #include "sys.h"
@@ -48,25 +50,53 @@
 #include "inv_mpu_dmp_motion_driver_3.h"
 #include "IMUCollecting.h"
 
+#include "cQueue.h"
 
-// 
+#define CIRCLE_SIZE 50
+#define EMG_QUEUE_SIZE 50
+#define IMU_QUEUE_SIZE 10
+#define EMG_SEND_PACKAGE_SIZE 67
+#define IMU_SEND_PACKAGE_SIZE 67
+
+// 全局变量
 PLN_FILER plnf[4]; 
+IIR_FILER iir_filter_array[4];
+COMB_FILER comb_filter_array[4];
 int index_plnf;
 int initial_PLF(PLN_FILER *x); //声明滤波函数
-
+unsigned char initial_IIR_Filter(IIR_FILER *);
+unsigned char initial_COMB_Filter(COMB_FILER *);
+cLinkQueue* EMGLinkQueueArray[4] = {NULL, NULL,NULL, NULL};
+volatile cCircleQueue* EMGCircleQueueArray[4] = {NULL, NULL, NULL, NULL};
+IMULinkQueue* imuLinkQueue_0, * imuLinkQueue_1, * imuLinkQueue_2, * imuLinkQueue_3;
+IMULinkQueue** imuLinkQueueArray;
+volatile IMUCircleQueue* IMUCircleQueueArray[4] = {NULL, NULL, NULL, NULL};
+uint8_t sumEMGData = 0;
+uint8_t packageNum = 0;
+uint8_t serialPackage[26];
+uint8_t errorMessage[66];
+// IMULinkQueue** imuLinkQueueArray;
+bool initQueues();
+bool initCircleQueues();
 // IMU模块
 short temp = 0;
 
+// EMG-IMU联合
+void doInitEMGIMU();
+uint8_t unionSerialPackage[26];
 //u8, u16, u32
 //(unsigned): char 8, short 16, int 32, long 32, long long 64, float 32, double 64
 
 /******************************************* FreeRTOS参数设置（start） **************************************************/
 
+// 互斥信号量句柄
+SemaphoreHandle_t xSemaphore = NULL;
+SemaphoreHandle_t xSemaphore_IMU = NULL;
 /******* “开始”任务 ***********/
 //任务优先级
 #define START_TASK_PRIO		1
 //任务堆栈大小	
-#define START_STK_SIZE 		128  
+#define START_STK_SIZE 		1024
 //任务句柄
 TaskHandle_t Start_Task_Handler;
 //任务函数
@@ -87,7 +117,7 @@ void US_task(void *pvParameters);
 //任务优先级
 #define EMG_TASK_PRIO		3
 //任务堆栈大小	
-#define EMG_STK_SIZE 		50
+#define EMG_STK_SIZE 		1024
 //任务句柄
 TaskHandle_t EMG_Task_Handler;
 //任务函数
@@ -104,8 +134,40 @@ TaskHandle_t IMU_Task_Handler;
 //任务函数
 void IMU_task(void *pvParameters);
 
+/******* “串口发送”任务 ***********/
+
+//任务优先级
+#define Serial_TASK_PRIO		3
+//任务堆栈大小	
+#define Serial_STK_SIZE 		1024 * 4
+//任务句柄
+TaskHandle_t Serial_Task_Handler;
+//任务函数
+void Serial_task(void *pvParameters);
+void test_Serial_task(void *pvParameters);
+
+/******* 定时器任务 ***********/
+#define TIMERCONTROL_TASK_PRIO  3
+#define TIMERCONTROL_STK_SIZE   1024
+TaskHandle_t TimerControlTask_Handler;
+void timerControl_task(void* pvParameters);
+
+TimerHandle_t EMG_Timer_Handle;
+void EMG_Timer_Callback(TimerHandle_t xTimer);
+
+
 /******* “数据整合发送”任务 ***********/
 
+
+/******* “IMU-EMG联合采集”任务 ***********/
+// //任务优先级
+// #define EMG_IMU_TASK_PRIO		3
+// //任务堆栈大小	
+// #define EMG_IMU_STK_SIZE 		1024 * 4
+// //任务句柄
+// TaskHandle_t EMG_IMU_Task_Handler;
+// //任务函数
+// void EMG_IMU_task(void *pvParameters);
 
 /******************************************* FreeRTOS参数设置（end） **************************************************/
 
@@ -113,6 +175,9 @@ void IMU_task(void *pvParameters);
 
 int main(void)
 {
+	xSemaphore = xSemaphoreCreateMutex();
+	xSemaphore_IMU = xSemaphoreCreateMutex();
+	
 //	Cache_Enable();                 //打开L1-Cache。使用STM32自带的ADC采样时，不要打开cache，否则会出现问题
 	HAL_Init();				        //初始化HAL库
 	Stm32_Clock_Init(432,25,2,9);   //设置时钟,216Mhz 
@@ -172,18 +237,26 @@ int main(void)
 	{
 	  initial_PLF(&plnf[index_plnf]);
 	}
+	for(int i = 0; i < 4; ++i)
+	{
+		initial_IIR_Filter(&iir_filter_array[i]);
+		initial_COMB_Filter(&comb_filter_array[i]);
+	}
 	ADS1299Init();// 初始化驱动ADS1299芯片的主芯片IO引脚功能
-//	setDev(0x04,0,2);// 用于EMG采集，0x04代表1kHz采样率
-	setDev(0x05,0,2);//0x05代表500Hz采样率
-	startDev(2);								
+	setDev(0x04,0,2);// 用于EMG采集，0x04代表1kHz采样率
+	// setDev(0x05,0,2);//0x05代表500Hz采样率
+	startDev(2);
+	initErrorMessage();							
 									
 	/**************** IMU 部分初始化 *************************/
-	uart3_init(115200);				// 初始化串口115200
+	// uart3_init(115200);				// 初始化串口115200
+	uart3_init(921600);
 //	uart3_init(500000);
 	// usmart_init(72);                // USMART初始化
 	printf("MPU6050 TEST\r\n");
-	MPU_IIC_Init();					// 初始化IIC总线
-	printf("after init");
+	// MPU_IIC_Init();					// 初始化IIC总线
+	MPU_Init();
+	// printf("after init");
 	// MPU DMP初始化
     // while(mpu_dmp_init_0())			
 	// {
@@ -206,7 +279,11 @@ int main(void)
 		delay_ms(500);
 	}
     printf("MPU6050 OK\r\n");
-	
+	// if(!initQueues())
+	// 	printf("init fails");
+	if(!initCircleQueues())
+		printf("init fails");
+	printf("begin tasks");
 
 	/**************** 创建开始任务(FreeRTOS) *********************/
 	xTaskCreate((TaskFunction_t )start_task,            //任务函数
@@ -215,7 +292,12 @@ int main(void)
 							(void*          )NULL,                  //传递给任务函数的参数
 							(UBaseType_t    )START_TASK_PRIO,       //任务优先级
 							(TaskHandle_t*  )&Start_Task_Handler);   //任务句柄              
+	
 	vTaskStartScheduler();          //开启任务调度
+	
+
+	/**************** 创建定时器(FreeRTOS) *********************/
+	
 }
 /******************************************* 主函数（end） **************************************************/
 
@@ -225,6 +307,23 @@ int main(void)
 void start_task(void *pvParameters)
 {
     taskENTER_CRITICAL();           //进入临界区
+	// 定时器任务
+	EMG_Timer_Handle = xTimerCreate(
+					(const char*) 			  	"EMG_timer_task",
+					(TickType_t) 			  	5,
+					(UBaseType_t) 			  	pdTRUE,			// 周期定时器
+					(void*)					  	1,
+					(TimerCallbackFunction_t) 	EMG_Timer_Callback);
+
+
+//	// 创建定时器任务
+	xTaskCreate((TaskFunction_t )timerControl_task,     	
+                (const char*    )"timerControl_task",   	
+                (uint16_t       )TIMERCONTROL_STK_SIZE,
+                (void*          )NULL,				
+                (UBaseType_t    )TIMERCONTROL_TASK_PRIO,	
+                (TaskHandle_t*  )&TimerControlTask_Handler);
+
 
     // 创建US任务
     xTaskCreate((TaskFunction_t )US_task,     	
@@ -234,25 +333,76 @@ void start_task(void *pvParameters)
                 (UBaseType_t    )US_TASK_PRIO,	
                 (TaskHandle_t*  )&US_Task_Handler);
 					
-		// 创建EMG任务	
- 		xTaskCreate((TaskFunction_t )EMG_task,     	
-                 (const char*    )"EMG_task",   	
-                 (uint16_t       )EMG_STK_SIZE, 
-                 (void*          )NULL,				
-                 (UBaseType_t    )EMG_TASK_PRIO,	
-                 (TaskHandle_t*  )&EMG_Task_Handler);  
+	// 创建EMG任务	
+	// xTaskCreate((TaskFunction_t )EMG_task,     	
+	// 			(const char*    )"EMG_task",   	
+	// 			(uint16_t       )EMG_STK_SIZE, 
+	// 			(void*          )NULL,				
+	// 			(UBaseType_t    )EMG_TASK_PRIO,	
+	// 			(TaskHandle_t*  )&EMG_Task_Handler);  
 								
-		// 创建IMU任务
-		xTaskCreate((TaskFunction_t )IMU_task,     	
-                (const char*    )"IMU_task",   	
-                (uint16_t       )IMU_STK_SIZE, 
-                (void*          )NULL,				
-                (UBaseType_t    )IMU_TASK_PRIO,	
-                (TaskHandle_t*  )&IMU_Task_Handler);  						
-								
+	// 创建IMU任务
+	xTaskCreate((TaskFunction_t )IMU_task,     	
+				(const char*    )"IMU_task",   	
+				(uint16_t       )IMU_STK_SIZE, 
+				(void*          )NULL,				
+				(UBaseType_t    )IMU_TASK_PRIO,	
+				(TaskHandle_t*  )&IMU_Task_Handler); 	
+
+//	// 创建串口发送数据任务
+	xTaskCreate((TaskFunction_t )test_Serial_task,
+				(const char*    )"test_Serial_task",
+				(uint16_t       )Serial_STK_SIZE,
+				(void*          )NULL,
+				(UBaseType_t    )Serial_TASK_PRIO,	
+				(TaskHandle_t*  )&Serial_Task_Handler);
+	
+	// // EMG IMU联合采集
+	// xTaskCreate((TaskFunction_t )EMG_IMU_task,
+	// 			(const char*    )"EMG_IMU_task",
+	// 			(uint16_t       )Serial_STK_SIZE,
+	// 			(void*          )NULL,
+	// 			(UBaseType_t    )EMG_IMU_TASK_PRIO,	
+	// 			(TaskHandle_t*  )&EMG_IMU_Task_Handler);
+							
 		
     vTaskDelete(Start_Task_Handler); //删除开始任务
     taskEXIT_CRITICAL();            //退出临界区
+}
+
+bool timerFlag = true;
+void timerControl_task(void *pvParameters)
+{
+	while(1)
+	{
+		if(timerFlag)
+		{
+			if(EMG_Timer_Handle != NULL)
+			{
+				xTimerStart(EMG_Timer_Handle, 0);
+				timerFlag = false;
+			}
+			else
+				printf("Timer NULL\r\n");
+		}
+		delay_ms(1);
+		// vTaskDelay(1 / portTICK_PERIOD_MS);	
+	}
+}
+
+int count = 0;
+u8 led_blink_num;
+void EMG_Timer_Callback(TimerHandle_t xTimer)
+{
+	dataAcq();
+	// dataAcq_24bit();
+	led_blink_num++;
+	if(led_blink_num > 200)
+	{
+		led_blink_num = 0;
+		LED_G_Toggle;
+		// printf("timer!\r\n");
+	}
 }
 
 
@@ -264,7 +414,7 @@ void US_task(void *pvParameters)
 		u8 Ch_Num;
 		LED_W_Toggle;				//LED灯闪烁（闪烁时间间隔为12.5ms*4=50ms），指示当前while循环正常工作
 		
-		for (Ch_Num = 1; Ch_Num < 5; Ch_Num++) //针对四通道Ch_Num < 5；针对8通道，Ch_Num < 9；如果使用以太网传输，需要使用Ch_Num < 9（应该是上位机的问题）
+		for (Ch_Num = 1; Ch_Num < 5; ++Ch_Num) //针对四通道Ch_Num < 5；针对8通道，Ch_Num < 9；如果使用以太网传输，需要使用Ch_Num < 9（应该是上位机的问题）
 		{	
 			//初始化ADC1通道1,以及初始化DMA
 			Rheostat_Init();
@@ -311,57 +461,465 @@ void US_task(void *pvParameters)
 void EMG_task(void *pvParameters)
 {
 	u8 led_blink_num;
+	struct mpuData data0, data1, data2, data3;
+	int count = 0;
 	while(1)
 	{
-		taskENTER_CRITICAL();           //进入临界区
+		// taskENTER_CRITICAL();           //进入临界区
+		// xSemaphoreTake(xSemaphore, portMAX_DELAY);		// 等待互斥量
 		dataAcq();
-		taskEXIT_CRITICAL();            //退出临界区
+		// printf("in");
+		// if(count < 10)
+			// printf("in %d", dataAcq());
+		// taskEXIT_CRITICAL();            //退出临界区
+		// delay_ms(2);
+		// GetMPUData(1, &data1);
+		// GetMPUData(2, &data2);
+		// GetMPUData(3, &data3);
+		// xSemaphoreGive(xSemaphore);		// 互斥信号量释放
 		led_blink_num++;
-		delay_ms(1);// 保证freeRTOS能够正常进行系统级别的任务切换，最小是1ms的间隔
+		// delay_ms(1);// 保证freeRTOS能够正常进行系统级别的任务切换，最小是1ms的间隔
+		// delay_ms(1);
+		// delay_us(100);
 		if(led_blink_num > 200)// 200ms，肌电模块上的指示灯会闪烁，说明工作正常
 		{
 			led_blink_num=0;
 			LED_G_Toggle;
 		}
+		count++;
 	}
 }
-
+// 测试一下delay_ms函数
+// void IMU_task(void *pvParameters)
+// {
+// 	u8 led_blink_num;
+// 	while(1)
+// 	{
+// 		led_blink_num++;
+// 		delay_ms(1);
+// 		if(led_blink_num > 200)// 200ms，肌电模块上的指示灯会闪烁，说明工作正常
+// 		{
+// 			led_blink_num=0;
+// 			LED_G_Toggle;
+// 		}
+// 	}
+// }
 //“IMU 采集任务”任务函数
 void IMU_task(void *pvParameters)
 {
 	u8 t = 0;
-	struct mpuData data0, data1, data2, data3;
+	volatile struct mpuData data0, data1, data2, data3;
 	while(1)
 	{
 		// 采集数据
 		// taskENTER_CRITICAL();           //进入临界区
+		// delay_ms(100);
 		// // GetMPUData(0, &data0);
 		GetMPUData(1, &data1);
+		// delay_ms(1);
 		GetMPUData(2, &data2);
 		GetMPUData(3, &data3);
 		// taskEXIT_CRITICAL();            //退出临界区
-		
+		// printf("imu\r\n");
 //		// 打印数据
 		// if((t % 2) == 0)
 		// {
-		// 	// PrintData(0, &data0);
+		// 	PrintData(0, &data0);
 		// 	PrintData(1, &data1);
 		// 	PrintData(2, &data2);
 		// 	PrintData(3, &data3);
 		// }
 		// 将数据发送给上位机
-		IMUSendData(1, &data1);
-		IMUSendData(2, &data2);
-		IMUSendData(3, &data3);
-		
-		delay_ms(1);// 保证freeRTOS能够正常进行系统级别的任务切换，最小是1ms的间隔
-		// t++;
+		// IMUSendData(1, &data1);
+		// IMUSendData(2, &data2);
+		// IMUSendData(3, &data3);
+		// xSemaphoreTake(xSemaphore_IMU, portMAX_DELAY);		// 等待互斥量
+		IMUSaveData(0, &data1);
+		IMUSaveData(1, &data2);
+		IMUSaveData(2, &data3);
+		// xSemaphoreGive(xSemaphore_IMU);		// 互斥信号量释放
+		// delay_ms(1);// 保证freeRTOS能够正常进行系统级别的任务切换，最小是1ms的间隔
+		vTaskDelay(1);
+		t++;
 	}
 }
 
+void Serial_task(void *pvParameters)
+{
+	int16_t EMGdata[4] = {0, 0, 0, 0};
+	uint16_t EMGdata2[4] = {0, 0, 0, 0};
+	int16_t result = 0;
+	while(1)
+	{
+
+		if(EMGCircleQueueArray[0]->size > EMG_QUEUE_SIZE)
+		{
+			for(int i = 0; i < EMG_QUEUE_SIZE; ++i)
+			{
+				for(u8 emgIndex = 0; emgIndex != 4; ++emgIndex)
+				{
+					EMGdata[emgIndex] = popCircleQueue(EMGCircleQueueArray[emgIndex]);
+					// IIR_Filter(&iir_filter_array[emgIndex], EMGdata[emgIndex], &result);
+					// EMGdata2[emgIndex] = (uint16_t)(EMGdata[emgIndex] & 0xFFF);
+					EMGdata2[emgIndex] = (uint16_t)(result & 0xFFF);
+				}
+				sendPackage(EMGdata2);
+			}
+			vTaskDelay(1);
+			// printf("");
+		}
+		
+	}
+}
+
+// void Serial_task(void *pvParameters)
+// {
+// 	serialPackage[0] = 0x0D;
+// 	serialPackage[1] = 0x0A;
+// 	int16_t tempRoll, tempPitch, tempYaw;
+// 	int count = 0;
+// 	// delay_ms(1000);
+// 	while(1)
+// 	{
+// 		// taskENTER_CRITICAL();           //进入临界区
+// 		xSemaphoreTake(xSemaphore, portMAX_DELAY);		// 等待互斥信号量
+// 		printf("task\n");
+// 		// pushLinkQueue(EMGLinkQueueArray[0], (int16_t)count);
+// 		// popLinkQueue(EMGLinkQueueArray[0]);
+// 		for(int i = 0; i < 4; ++i)
+// 		{
+// 			// pushLinkQueue(EMGLinkQueueArray[i], 88);
+// 			// if(!isLinkQueueEmpty(EMGLinkQueueArray[i]))
+// 			// 	// serialPackage[2 + i] = EMGLinkQueueArray[i]->front->data;
+// 			// 	// popLinkQueue(EMGLinkQueueArray[i]);
+// 			// 	serialPackage[2 + i] = (((unsigned short)popLinkQueue(EMGLinkQueueArray[i])) >> 4) & 0xFF;
+
+// 			if(!isCircleQueueEmpty(EMGCircleQueueArray[i]))
+// 				// serialPackage[2 + i] = EMGLinkQueueArray[i]->front->data;
+// 				// popLinkQueue(EMGLinkQueueArray[i]);
+// 				serialPackage[2 + i] = (((unsigned short)popCircleQueue(EMGCircleQueueArray[i])) >> 4) & 0xFF;
+			
+
+// 			sumEMGData += serialPackage[2 + i];
+// 		}
+// 		printf("maxsize:%d  ", EMGCircleQueueArray[0]->maxSize);
+// 		count++;
+// 		printf("data:%d\n  ", serialPackage[2]);
+// 		printf("size:%d\n  ", EMGCircleQueueArray[0]->size);
+// 		// taskEXIT_CRITICAL();            //退出临界区
+// 		xSemaphoreGive(xSemaphore);
+// 		delay_ms(1);
+		
+// 		serialPackage[6] = sumEMGData;
+// 		serialPackage[7] = packageNum;
+// 		// xSemaphoreTake(xSemaphore_IMU, portMAX_DELAY);		// 等待互斥量
+// 		// for(int i = 1; i < 4; ++i)	// 这里只用了1-3号IMU，没有用0
+// 		// {
+
+// 		// 	if(!isLinkQueueEmpty(imuLinkQueueArray[i]->rowQueue))
+// 		// 		tempRoll = popLinkQueue(imuLinkQueueArray[i]->rowQueue);
+// 		// 	if(!isLinkQueueEmpty(imuLinkQueueArray[i]->pitchQueue))
+// 		// 		tempPitch = popLinkQueue(imuLinkQueueArray[i]->pitchQueue);
+// 		// 	if(!isLinkQueueEmpty(imuLinkQueueArray[i]->yawQueue))
+// 		// 		tempYaw = popLinkQueue(imuLinkQueueArray[i]->yawQueue);
+// 		// 	serialPackage[6 * i + 2] = (tempRoll >> 8) & 0xFF;	// rollHigh
+// 		// 	serialPackage[6 * i + 3] = tempRoll & 0xFF;			// rollLow
+// 		// 	serialPackage[6 * i + 4] = (tempPitch >> 8) & 0xFF;
+// 		// 	serialPackage[6 * i + 5] = tempPitch & 0xFF;
+// 		// 	serialPackage[6 * i + 6] = (tempYaw >> 8) & 0xFF;
+// 		// 	serialPackage[6 * i + 7] = tempYaw & 0xFF;
+// 		// }
+// 		// xSemaphoreGive(xSemaphore_IMU);		// 互斥信号量释放
+		
+// 		// usart3_SendPackage(serialPackage, 26);
+// 		packageNum++;
+// 		if(packageNum > 256)
+// 			packageNum = 0;
+// 		delay_ms(1);
+// 	}
+	
+// }
+uint8_t testSendPackage[EMG_SEND_PACKAGE_SIZE];
+uint8_t imuRowSendPackage[EMG_SEND_PACKAGE_SIZE];
+uint8_t imuPitchSendPackage[EMG_SEND_PACKAGE_SIZE];
+uint8_t imuYawSendPackage[EMG_SEND_PACKAGE_SIZE];
+uint8_t imuTotalSendPackage[IMU_SEND_PACKAGE_SIZE];
+void test_Serial_task(void *pvParameters)
+{
+	u8 count = 0;
+	int16_t tempRoll, tempPitch, tempYaw;
+	uint8_t EMGPackageNum = 0;
+	uint8_t IMUPackageNum = 0;
+	testSendPackage[0] = 0x0D;
+	testSendPackage[2] = 0x32;		// 数据长度为50
+	testSendPackage[EMG_SEND_PACKAGE_SIZE - 1] = 0x0A;
+	testSendPackage[EMG_SEND_PACKAGE_SIZE - 2] = 0xFF;
+	testSendPackage[EMG_SEND_PACKAGE_SIZE - 3] = 0x88;
+	imuRowSendPackage[0] = 0x0E;
+	imuRowSendPackage[EMG_SEND_PACKAGE_SIZE - 1] = 0x0B;
+	imuRowSendPackage[EMG_SEND_PACKAGE_SIZE - 2] = 0xFF;
+	imuRowSendPackage[EMG_SEND_PACKAGE_SIZE - 3] = 0x88;
+	imuPitchSendPackage[0] = 0x0F;
+	imuPitchSendPackage[EMG_SEND_PACKAGE_SIZE - 1] = 0x0C;
+	imuPitchSendPackage[EMG_SEND_PACKAGE_SIZE - 2] = 0xFF;
+	imuPitchSendPackage[EMG_SEND_PACKAGE_SIZE - 3] = 0x88;
+	imuYawSendPackage[0] = 0x10;
+	imuYawSendPackage[EMG_SEND_PACKAGE_SIZE - 1] = 0x0D;
+	imuYawSendPackage[EMG_SEND_PACKAGE_SIZE - 2] = 0xFF;
+	imuYawSendPackage[EMG_SEND_PACKAGE_SIZE - 3] = 0x88;
+
+	imuTotalSendPackage[0] = 0x0B;
+	imuTotalSendPackage[2] = 0x3C;		// 数据长度为60
+	imuTotalSendPackage[IMU_SEND_PACKAGE_SIZE - 1] = 0x0E;
+	imuTotalSendPackage[IMU_SEND_PACKAGE_SIZE - 2] = 0xFF;
+	imuTotalSendPackage[IMU_SEND_PACKAGE_SIZE - 3] = 0x88;
+
+	while(1)
+	{
+		// printf("int serial\n");
+		for(u8 emgIndex = 0; emgIndex != 4; ++emgIndex)
+		{
+			if(EMGCircleQueueArray[emgIndex]->size > EMG_QUEUE_SIZE)
+			{
+				testSendPackage[1] = emgIndex;
+				for(int i = 0; i < EMG_QUEUE_SIZE; ++i)
+				{
+					testSendPackage[3 + i] = popCircleQueue(EMGCircleQueueArray[emgIndex]);
+				}
+				testSendPackage[EMG_SEND_PACKAGE_SIZE - 4] = EMGPackageNum;
+				usart3_SendPackage(testSendPackage, EMG_SEND_PACKAGE_SIZE);
+				++EMGPackageNum;
+				if(EMGPackageNum > 256)
+					EMGPackageNum = 0;
+				delay_ms(1);
+				// printf("");
+			}
+		}
+
+		for(u8 imuIndex = 0; imuIndex != 3; ++imuIndex)
+		{
+			if(IMUCircleQueueArray[imuIndex]->rowQueue->size > IMU_QUEUE_SIZE &&
+			   IMUCircleQueueArray[imuIndex]->pitchQueue->size > IMU_QUEUE_SIZE &&
+			   IMUCircleQueueArray[imuIndex]->yawQueue->size > IMU_QUEUE_SIZE)
+			{
+				imuTotalSendPackage[1] = imuIndex;
+				for(u8 i = 0; i != IMU_QUEUE_SIZE; ++i)
+				{
+					tempRoll = popCircleQueue(IMUCircleQueueArray[imuIndex]->rowQueue);
+					imuTotalSendPackage[2 * i + 3] = (tempRoll >> 8) & 0xFF;		// rollHigh
+					imuTotalSendPackage[2 * i + 4] = tempRoll & 0xFF;
+				}
+				for(u8 i = 0; i != IMU_QUEUE_SIZE; ++i)
+				{
+					tempPitch = popCircleQueue(IMUCircleQueueArray[imuIndex]->pitchQueue);
+					imuTotalSendPackage[2 * i + 23] = (tempPitch >> 8) & 0xFF;
+					imuTotalSendPackage[2 * i + 24] = tempPitch & 0xFF;
+				}
+				for(u8 i = 0; i != IMU_QUEUE_SIZE; ++i)
+				{
+					tempYaw = popCircleQueue(IMUCircleQueueArray[imuIndex]->yawQueue);
+					imuTotalSendPackage[2 * i + 43] = (tempYaw >> 8) & 0xFF;
+					imuTotalSendPackage[2 * i + 44] = tempYaw & 0xFF;
+				}
+				imuTotalSendPackage[IMU_SEND_PACKAGE_SIZE - 4] = IMUPackageNum;
+				usart3_SendPackage(imuTotalSendPackage, IMU_SEND_PACKAGE_SIZE);
+				++IMUPackageNum;
+				if(IMUPackageNum > 256)
+					IMUPackageNum = 0;
+				delay_ms(1);
+			}
+		}
+		// for(u8 imuIndex = 0; imuIndex != 3; ++imuIndex)
+		// {
+		// 	if(IMUCircleQueueArray[imuIndex]->rowQueue->size > IMU_QUEUE_SIZE)
+		// 	{
+		// 		imuRowSendPackage[1] = imuIndex;
+		// 		for(u8 i = 0; i != IMU_QUEUE_SIZE; ++i)
+		// 		{
+		// 			tempRoll = popCircleQueue(IMUCircleQueueArray[imuIndex]->rowQueue);
+		// 			imuRowSendPackage[2 * (i + 1)] = (tempRoll >> 8) & 0xFF;		// rollHigh
+		// 			imuRowSendPackage[2 * (i + 1) + 1] = tempRoll & 0xFF;			// rollLow
+		// 		}
+		// 		usart3_SendPackage(imuRowSendPackage, EMG_SEND_PACKAGE_SIZE);
+		// 		// printf("");
+		// 	}
+		// 	if(IMUCircleQueueArray[imuIndex]->pitchQueue->size > IMU_QUEUE_SIZE)
+		// 	{
+		// 		imuPitchSendPackage[1] = imuIndex;
+		// 		for(u8 i = 0; i != IMU_QUEUE_SIZE; ++i)
+		// 		{
+		// 			tempPitch = popCircleQueue(IMUCircleQueueArray[imuIndex]->pitchQueue);
+		// 			imuPitchSendPackage[2 * (i + 1)] = (tempPitch >> 8) & 0xFF;
+		// 			imuPitchSendPackage[2 * (i + 1) + 1] = tempPitch & 0xFF;
+		// 		}
+		// 		usart3_SendPackage(imuPitchSendPackage, EMG_SEND_PACKAGE_SIZE);
+		// 		// printf("");
+		// 	}
+		// 	if(IMUCircleQueueArray[imuIndex]->yawQueue->size > IMU_QUEUE_SIZE)
+		// 	{
+		// 		imuYawSendPackage[1] = imuIndex;
+		// 		for(u8 i = 0; i != IMU_QUEUE_SIZE; ++i)
+		// 		{
+		// 			tempYaw = popCircleQueue(IMUCircleQueueArray[imuIndex]->yawQueue);
+		// 			imuYawSendPackage[2 * (i + 1)] = (tempYaw >> 8) & 0xFF;
+		// 			imuYawSendPackage[2 * (i + 1) + 1] = tempYaw & 0xFF;
+		// 		}
+		// 		usart3_SendPackage(imuYawSendPackage, EMG_SEND_PACKAGE_SIZE);
+		// 		// printf("");
+		// 	}
+		// }
+		// if(++count > 200)
+		// {
+		// 	for(int emgIndex = 0; emgIndex != 4; ++emgIndex)
+		// 	{
+		// 		printf("emg[%d]now size: %d  ", emgIndex, EMGCircleQueueArray[emgIndex]->size);
+		// 	}
+		// 	for(int imuIndex = 0; imuIndex != 3; ++imuIndex)
+		// 	{
+		// 		printf("imuRoll[%d]now size: %d  ", imuIndex, IMUCircleQueueArray[imuIndex]->rowQueue->size);
+		// 		printf("imuPitch[%d]now size: %d  ", imuIndex, IMUCircleQueueArray[imuIndex]->pitchQueue->size);
+		// 		printf("imuYaw[%d]now size: %d  ", imuIndex, IMUCircleQueueArray[imuIndex]->yawQueue->size);
+		// 	}
+		// 	// printf("[1]now size: %d  ", EMGCircleQueueArray[1]->size);
+		// 	count = 0;
+		// }
+		delay_ms(1);
+	}
+}
+
+// 全局变量初始化
+bool initQueues()
+{
+	bool flag = true;
+	// EMGLinkQueueArray = (cLinkQueue**)malloc(sizeof(cLinkQueue*));
+	// if(!EMGLinkQueueArray)
+	// 	flag = false;
+	for(int i = 0; i < 4; ++i)
+	{
+		EMGLinkQueueArray[i] = (cLinkQueue*)malloc(sizeof(cLinkQueue));
+		if(!EMGLinkQueueArray[i])
+			flag = false;
+		initLinkQueue(EMGLinkQueueArray[i]);
+	}
+	// imuLinkQueue_0 = imuLinkQueue_1 = imuLinkQueue_2 = imuLinkQueue_3 = (IMULinkQueue*)malloc(sizeof(IMULinkQueue));
+	// initIMULinkQueue(imuLinkQueue_0);
+	// initIMULinkQueue(imuLinkQueue_1);
+	// initIMULinkQueue(imuLinkQueue_2);
+	// initIMULinkQueue(imuLinkQueue_3);
+	imuLinkQueueArray = (IMULinkQueue**)malloc(4 * sizeof(IMULinkQueue*));
+	if(!imuLinkQueueArray)
+		flag = false;
+	for(int i = 0; i < 4; i++)
+	{
+		imuLinkQueueArray[i] = (IMULinkQueue*)malloc(sizeof(IMULinkQueue));
+		if(!imuLinkQueueArray[i])
+			flag = false;
+		flag = initIMULinkQueue(imuLinkQueueArray[i]);
+	}
+	return flag;
+}
+bool initCircleQueues()
+{
+	bool flag = true;
+	for(int i = 0; i < 4; ++i)
+	{
+		EMGCircleQueueArray[i] = (cCircleQueue*)pvPortMalloc(sizeof(cCircleQueue));
+		if(!EMGCircleQueueArray[i])
+			flag = false;
+		flag = initCircleQueue(EMGCircleQueueArray[i], 50);
+	}
+	for(int i = 0; i != 4; ++i)
+	{
+		IMUCircleQueueArray[i] = (IMUCircleQueue*)pvPortMalloc(sizeof(IMUCircleQueue));
+		if(!IMUCircleQueueArray[i])
+			flag = false;
+		flag = initIMUCircleQueue(IMUCircleQueueArray[i], CIRCLE_SIZE);
+	}
+	return flag;
+}
 /******************************************* FreeRTOS任务函数实现（end） **************************************************/
 
+void doInitEMGIMU()
+{
 
+}
+void EMG_IMU_task(void *pvParameters)
+{
+	unionSerialPackage[0] = 0x0D;
+	unionSerialPackage[1] = 0x0A;
+	int16_t tempRoll, tempPitch, tempYaw;
+	mpuData data0, data1, data2, data3;
+	uint8_t led_blink_num;
+	uint8_t sumEMGData = 0;
+	unsigned short* EMGPointer = NULL;
+	mpuData* imuDataArray[3] = {NULL, NULL, NULL};
+	int packageNum = 0;
+	while(1)
+	{
+		// printf("in union task    ");
+		// EMGPointer = (unsigned short*)pvPortMalloc(8 * sizeof(unsigned short));
+		// EMGPointer = (unsigned short*)malloc(8 * sizeof(unsigned short));
+		// if(EMGPointer)
+		// 	EMGPointer = EMGdataAcq();
+		EMGPointer = EMGdataAcq();
+		// else
+		// 	printf("EMGPointer malloc fails");
+		for(int i = 0; i != 4; ++i)
+		{
+			unionSerialPackage[2 + i] = (*(EMGPointer + i) >> 4) & 0xFF;
+			sumEMGData += EMGPointer[i];
+		}
+		unionSerialPackage[6] = sumEMGData;
+		unionSerialPackage[7] = packageNum;
+		// vPortFree(EMGPointer);
+		// free(EMGPointer);
+		// GetMPUData(0, &data0);
+		GetMPUData(1, &data1);
+		GetMPUData(2, &data2);
+		GetMPUData(3, &data3);
+		// for(int i = 0; i != 3; ++i)
+		// {
+		// 	// imuDataArray[i] = (mpuData*)pvPortMalloc(sizeof(mpuData));
+		// 	imuDataArray[i] = (mpuData*)malloc(sizeof(mpuData));
+		// 	if(!imuDataArray[i])
+		// 		printf("imuDataArray[%d] malloc fails   ", i);
+		// }
+		imuDataArray[0] = &data1; imuDataArray[1] = &data2; imuDataArray[2] = &data3;
+		for(int i = 1; i != 4; ++i)
+		{
+			tempRoll = (int16_t)(100 * imuDataArray[i - 1]->roll);
+			tempPitch = (int16_t)(100 * imuDataArray[i - 1]->pitch);
+			tempYaw = (int16_t)(100 * imuDataArray[i - 1]->yaw);
+			unionSerialPackage[6 * i + 2] = (tempRoll >> 8) & 0xFF;	// rollHigh
+		 	unionSerialPackage[6 * i + 3] = tempRoll & 0xFF;			// rollLow
+			unionSerialPackage[6 * i + 4] = (tempPitch >> 8) & 0xFF;
+		 	unionSerialPackage[6 * i + 5] = tempPitch & 0xFF;
+		 	unionSerialPackage[6 * i + 6] = (tempYaw >> 8) & 0xFF;
+		 	unionSerialPackage[6 * i + 7] = tempYaw & 0xFF;
+		}
+		// for(int i = 8; i < 26; ++i)
+		// {
+		// 	unionSerialPackage[i] = 0;
+		// }
+
+		// for(int i = 0; i != 3; ++i)
+		// {
+		// 	// vPortFree(imuDataArray[i]);
+		// 	free(imuDataArray[i]);
+		// }
+
+		usart3_SendPackage(unionSerialPackage, 26);
+
+		++led_blink_num;
+		++packageNum;
+		delay_ms(1);
+		if(led_blink_num > 200)
+		{
+			led_blink_num = 0;
+			LED_G_Toggle;
+		}
+	}
+}
 /*
 注意事项：
 1、肌电采集过程中会出现偶尔的脉冲式噪声，这个主要是由于freeRTOS进行任务切换导致的，当肌电采样频率高于1kHz时，会比较明显，当设置为500Hz时，几乎就没有了。

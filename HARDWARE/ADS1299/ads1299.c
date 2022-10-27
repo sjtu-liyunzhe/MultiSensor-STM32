@@ -8,16 +8,29 @@
 //FreeRTOS相关
 #include "FreeRTOS.h"
 #include "task.h"
+#include "semphr.h"
 
+#include "cQueue.h"
+#include "IMUCollecting.h"
 
+extern SemaphoreHandle_t xSemaphore;
 uint8_t EMG_Package[8];
 unsigned char mask[]={0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80};
-int ADS1299_Data2[9];
-unsigned short EMG_Data2[8];
+volatile int ADS1299_Data2[9];
+volatile unsigned short EMG_Data2[8];
 extern PLN_FILER plnf[4];//梳子滤波
-
+extern IIR_FILER iir_filter_array[4];
+extern COMB_FILER comb_filter_array[4];
+extern uint8_t errorMessage[66];
+#define ERROR_PACKAGE_SIZE 66
 uint8_t Package_Number=0;//~ 测试是否丢包
 uint8_t sum_emgdata=0;//~ 和校验位
+
+extern cLinkQueue* EMGLinkQueueArray[4];
+extern volatile cCircleQueue* EMGCircleQueueArray[4];
+
+volatile char EMG_24bit[20];
+uint8_t EMG_Package_24bit[20];
 
 void SelectChip(int index)
 {
@@ -341,6 +354,54 @@ void dataAcq(void)
 	int index_ch;
 //	int index_EMG=0;
 	unsigned int temp;
+	int16_t result = 0;
+	int lsbshift=2;
+	
+		if(!(GET_DRDY2))
+	{
+		ADS1299_READ(2);
+		
+		for(index_ch=0;	index_ch<4;	index_ch++)
+		{
+			// add_PLF(&plnf[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);//梳子滤波器
+			COMB_Filter(&comb_filter_array[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);
+			// IIR_Filter(&iir_filter_array[index_ch], ADS1299_Data2[index_ch+1], &result);		// butterworth滤波器
+			IIR_Filter(&iir_filter_array[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);
+			// printf("%f\n", result);
+			temp = (ADS1299_Data2[index_ch+1]>>(lsbshift+4)); //移动的具体位数需要确定，12？ lsbshift=8？ 为什么保留中间的位数，舍弃末尾可以理解，但为何舍弃高位
+			// IIR_Filter(&iir_filter_array[index_ch], (int16_t)temp, &result);
+			// temp = (unsigned short)result;
+			temp = (unsigned short)temp;
+			if(ADS1299_Data2[index_ch+1]<0)
+				temp|= 0x800;
+			else
+				temp&= 0x7FF;
+		
+		EMG_Data2[index_ch]= (uint16_t)(temp&0xFFF);
+		}
+		// 感觉上面的不对，下面按自己的理解修改一下：
+		// int dataNow;
+		// for(index_ch=0;	index_ch<4;	index_ch++)
+		// {
+		// 	add_PLF(&plnf[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);//梳子滤波器
+		// 	dataNow = ADS1299_Data2[index_ch+1];
+		// 	printf("%d\r\n", dataNow);
+		// }
+		// xSemaphoreTake(xSemaphore, portMAX_DELAY);		// 等待互斥量
+		EMGSaveData(EMG_Data2);
+		// xSemaphoreGive(xSemaphore);		// 互斥信号量释放
+		// sendPackage(EMG_Data2);
+		// delay_ms(2);
+	}
+
+}
+
+// return 指向数组的指针
+unsigned short* EMGdataAcq(void)
+{
+	int index_ch;
+//	int index_EMG=0;
+	unsigned int temp;
 	int lsbshift=2;
 	
 		if(!(GET_DRDY2))
@@ -350,6 +411,7 @@ void dataAcq(void)
 		for(index_ch=0;	index_ch<4;	index_ch++)
 		{
 			add_PLF(&plnf[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);//梳子滤波器
+			// 为什么要右移
 			temp = (unsigned short)(ADS1299_Data2[index_ch+1]>>(lsbshift+4)); //移动的具体位数需要确定，12？ lsbshift=8？ 为什么保留中间的位数，舍弃末尾可以理解，但为何舍弃高位
 			if(ADS1299_Data2[index_ch+1]<0)
 				temp|= 0x800;
@@ -358,9 +420,11 @@ void dataAcq(void)
 		
 		EMG_Data2[index_ch]= (uint16_t)(temp&0xFFF);
 		}
-		
-	
+		xSemaphoreTake(xSemaphore, portMAX_DELAY);		// 等待互斥量
+		EMGSaveData(EMG_Data2);
+		xSemaphoreGive(xSemaphore);		// 互斥信号量释放
 		sendPackage(EMG_Data2);
+		return EMG_Data2;
 	}
 
 }
@@ -443,6 +507,112 @@ void sendPackage(unsigned short *theData)
 		 
  }
 
-	
+// int16_t EMGSaveData(unsigned short* EMGdata)
+// {
+// 	for(int i = 0; i < 4; ++i)
+// 	{
+// 		if(!pushLinkQueue(EMGLinkQueueArray[i], (int16_t)EMGdata[i]))
+// 			printf("EMG Save fails, number:%d  ", i);
+// 	}
+// 	return EMGLinkQueueArray[0]->front->data;
+// }
+
+void initErrorMessage()
+{
+	errorMessage[0] = 0x11;
+	errorMessage[1] = 0x00;
+	for(int i = 0; i < 11; ++i)
+	{
+		errorMessage[5 * i + 2] = 0x65;		// e
+		errorMessage[5 * i + 3] = 0x72;		// r
+		errorMessage[5 * i + 4] = 0x72;		// r
+		errorMessage[5 * i + 5] = 0x6F;		// o
+		errorMessage[5 * i + 6] = 0x72;		// r
+	}		// index 61
+	errorMessage[ERROR_PACKAGE_SIZE - 1] = 0x0F;	// 65
+	errorMessage[ERROR_PACKAGE_SIZE - 2] = 0xFF;	// 64
+	errorMessage[ERROR_PACKAGE_SIZE - 3] = 0x88;	// 63
+}
+
+void EMGSaveData(unsigned short* EMGdata)
+{
+	for(int i = 0; i < 4; ++i)
+	{
+		int16_t temp = (EMGdata[i] >> 4) & 0xff;
+		if(!pushCircleQueue(EMGCircleQueueArray[i], (int16_t)temp))
+		{
+			// printf("EMG Save fails, number:%d  ", i);
+			usart3_SendPackage(errorMessage, ERROR_PACKAGE_SIZE);
+		}
+	}
+}
+
+// 为了暂时使用sendPackage(),用下面的东西，不要移位，用新上位机时改成上面的
+// void EMGSaveData(unsigned short* EMGdata)
+// {
+// 	// 只test2个
+// 	for(int i = 0; i < 4; ++i)
+// 	{
+// 		int16_t temp = EMGdata[i];
+// 		if(!pushCircleQueue(EMGCircleQueueArray[i], (int16_t)temp))
+// 			printf("EMG Save fails, number:%d  ", i);
+// 	}
+// }
+
+// 不要移位
+void dataAcq_24bit(void)
+{
+	int index_ch;
+//	int index_EMG=0;
+	int temp;
+	int16_t result = 0;
+		if(!(GET_DRDY2))
+	{
+		ADS1299_READ(2);
+		
+		for(index_ch=0;	index_ch<4;	index_ch++)
+		{
+			add_PLF(&plnf[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);//梳子滤波器
+			// COMB_Filter(&comb_filter_array[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);
+			// IIR_Filter(&iir_filter_array[index_ch], ADS1299_Data2[index_ch+1], &result);		// butterworth滤波器
+			// printf("%f\n", result);
+			temp = ADS1299_Data2[index_ch+1];
+			EMG_24bit[index_ch * 4]= (temp >> 24) & 0xFF;
+			EMG_24bit[index_ch * 4 + 1] = (temp >> 16) & 0xFF;
+			EMG_24bit[index_ch * 4 + 2] = (temp >> 8) & 0xFF;
+			EMG_24bit[index_ch * 4 + 3] = temp & 0xFF;
+		}
+		sendPackage_24bit(EMG_24bit);
+	}
+}
+// 传输完整的24位肌电数据
+void sendPackage_24bit(char *theData)
+{
+	int j;
+	char emgdata_4ch[16];
+	for( j = 0; j < 16; j++)
+	{
+		emgdata_4ch[j] = *(theData + j);
+		sum_emgdata += emgdata_4ch[j];
+	}
+	for(j = 0; j < 16; j++) 
+	{
+		EMG_Package_24bit[j] = emgdata_4ch[j];
+	}
 
 	
+	EMG_Package_24bit[16] = sum_emgdata; //~ 和校验
+	EMG_Package_24bit[17] = Package_Number; //~ 数据包计数
+	EMG_Package_24bit[18] = 0x0D; //包头
+	EMG_Package_24bit[19] = 0x0A; //包尾
+	
+	USART2_Send_Data(EMG_Package_24bit, 20);//~ 使用串口发送数据，第二个参数为需要传输的字节数目
+	
+	//~ 通过判断包的数值，可以知道数据传输过程中是否存在丢包问题，例如，可以将数值在上位机中画出波形，更容易直观看出效果
+	Package_Number++;
+	if(Package_Number > 256)
+	{
+		Package_Number=0;
+//		LED_G_Toggle;
+	}
+}

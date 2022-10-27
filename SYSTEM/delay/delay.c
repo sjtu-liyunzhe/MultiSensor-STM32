@@ -71,16 +71,19 @@ void delay_us(u32 nus)
 //nms:要延时的ms数
 //nms:0~65535
 void delay_ms(u32 nms)
-{	
+{
 	if(xTaskGetSchedulerState()!=taskSCHEDULER_NOT_STARTED)//系统已经运行
-	{		
-		if(nms>=fac_ms)						//延时的时间大于OS的最少时间周期 
-		{ 
-   			vTaskDelay(nms/fac_ms);	 		//FreeRTOS延时
-		}
-		nms%=fac_ms;						//OS已经无法提供这么小的延时了,采用普通方式延时    
+	{
+		// 做一下修改
+		vTaskDelay(nms * configTICK_RATE_HZ / 1000);		// 会进行任务调度
+		// if(nms>=fac_ms)						//延时的时间大于OS的最少时间周期 
+		// {
+   		// 	// vTaskDelay(nms/fac_ms);	 		//FreeRTOS延时
+		// }
+		// nms%=fac_ms;						//OS已经无法提供这么小的延时了,采用普通方式延时    
 	}
-	delay_us((u32)(nms*1000));				//普通方式延时
+	else
+		delay_us((u32)(nms*1000));				//普通方式延时
 }
 
 //延时nms,不会引起任务调度

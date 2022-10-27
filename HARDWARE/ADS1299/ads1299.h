@@ -42,6 +42,10 @@ void dataAcq(void);
 void ADS1299_READ(int);
 void sendPackage(unsigned short*);
 void USART2_Send_Data(uint8_t*,uint16_t);
-
+void EMGSaveData(unsigned short* EMGdata);
+unsigned short* EMGdataAcq(void);
+void initErrorMessage();
+void dataAcq_24bit();
+void sendPackage_24bit(char *theData);
 
 #endif

@@ -9,6 +9,13 @@
         "usart_3.h": "c",
         "led.h": "c",
         "imucollecting.h": "c",
-        "cqueue.h": "c"
+        "cqueue.h": "c",
+        "mpu6050.h": "c",
+        "ads1299.h": "c",
+        "freertos.h": "c",
+        "freertosconfig.h": "c",
+        "semphr.h": "c",
+        "assert.h": "c",
+        "delay.h": "c"
     }
 }

@@ -335,7 +335,7 @@
               <MiscControls>--C99</MiscControls>
               <Define>USE_HAL_DRIVER,STM32F767xx</Define>
               <Undefine></Undefine>
-              <IncludePath>..\CORE;..\HALLIB\Inc;..\USER;..\SYSTEM\delay;..\SYSTEM\sys;..\SYSTEM\usart;..\HARDWARE;..\HARDWARE\BF;..\HARDWARE\PULSER;..\HARDWARE\DAC;..\HARDWARE\KEY;..\HARDWARE\TIMER;..\HARDWARE\OSC;..\HARDWARE\FIFO;..\HARDWARE\ADC;..\HARDWARE\ETHERNET;..\M8266WIFI;..\HARDWARE\EXTI;..\HARDWARE\MATRIX;..\HARDWARE\FEATURE;..\HARDWARE\LDA;..\FreeRTOS\include;..\FreeRTOS\portable\RVDS\ARM_CM7\r0p1;..\HARDWARE\ADS1299;..\HARDWARE\EMGProcessing;..\HARDWARE\MPU6050;..\HARDWARE\MPU6050\eMPL;..\HARDWARE\IMUCollecting;..\FreeRTOS\include;..\HARDWARE\LED</IncludePath>
+              <IncludePath>..\CORE;..\HALLIB\Inc;..\USER;..\SYSTEM\delay;..\SYSTEM\sys;..\SYSTEM\usart;..\HARDWARE;..\HARDWARE\BF;..\HARDWARE\PULSER;..\HARDWARE\DAC;..\HARDWARE\KEY;..\HARDWARE\TIMER;..\HARDWARE\OSC;..\HARDWARE\FIFO;..\HARDWARE\ADC;..\HARDWARE\ETHERNET;..\M8266WIFI;..\HARDWARE\EXTI;..\HARDWARE\MATRIX;..\HARDWARE\FEATURE;..\HARDWARE\LDA;..\FreeRTOS\include;..\FreeRTOS\portable\RVDS\ARM_CM7\r0p1;..\HARDWARE\ADS1299;..\HARDWARE\EMGProcessing;..\HARDWARE\MPU6050;..\HARDWARE\MPU6050\eMPL;..\HARDWARE\IMUCollecting;..\FreeRTOS\include;..\HARDWARE\LED;..\HARDWARE\CQUEUE</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
