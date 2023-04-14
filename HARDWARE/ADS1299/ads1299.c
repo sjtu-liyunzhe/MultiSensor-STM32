@@ -5,7 +5,7 @@
 #include "usart.h"
 #include "led.h"
 
-//FreeRTOSÏà¹Ø
+//FreeRTOSï¿½ï¿½ï¿?
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
@@ -18,13 +18,14 @@ uint8_t EMG_Package[8];
 unsigned char mask[]={0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80};
 volatile int ADS1299_Data2[9];
 volatile unsigned short EMG_Data2[8];
-extern PLN_FILER plnf[4];//Êá×ÓÂË²¨
+volatile int16_t EMG_Data_16bit[8];
+extern PLN_FILER plnf[4];//ï¿½ï¿½ï¿½ï¿½ï¿½Ë²ï¿½
 extern IIR_FILER iir_filter_array[4];
 extern COMB_FILER comb_filter_array[4];
 extern uint8_t errorMessage[66];
 #define ERROR_PACKAGE_SIZE 66
-uint8_t Package_Number=0;//~ ²âÊÔÊÇ·ñ¶ª°ü
-uint8_t sum_emgdata=0;//~ ºÍÐ£ÑéÎ»
+uint8_t Package_Number=0;//~ ï¿½ï¿½ï¿½ï¿½ï¿½Ç·ñ¶ª°ï¿½
+uint8_t sum_emgdata=0;//~ ï¿½ï¿½Ð£ï¿½ï¿½Î»
 
 extern cLinkQueue* EMGLinkQueueArray[4];
 extern volatile cCircleQueue* EMGCircleQueueArray[4];
@@ -40,10 +41,10 @@ void SelectChip(int index)
 
 void ADS1299Init(void)
 {
-	//EEG¹²ÓÐÒý½ÅºÅ
+	//EEGï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Åºï¿½
 	//START 	PC7
 	
-	//EMGÄ£¿éads1299Òý½ÅºÅ
+	//EMGÄ£ï¿½ï¿½ads1299ï¿½ï¿½ï¿½Åºï¿½
 	//CS2			output	PC9
 	//CLK2		output	PA9
 	//DIN2		output	PA11
@@ -136,8 +137,11 @@ void setDev(unsigned char rate, unsigned char sleev_flag,	int index)
 	{
 		ADS1299_out=ADS1299_RREG(0x25+index_ch,index);
 		ADS1299_WREG(0x45+index_ch,	0x00,	(ADS1299_out&0xF8)|0,index);
+		// ADS1299_WREG(0x05+index_ch,	0x00, 0x65,index);
 	}	
-	
+
+	// ADS1299_out=ADS1299_RREG(0x02,index);
+	// ADS1299_WREG(0x02, 0x00, (ADS1299_out | 0x10),index);	// ²âÊÔÐÅºÅ
 }
 
 void ADS1299_SDATAC(int	index)
@@ -363,12 +367,12 @@ void dataAcq(void)
 		
 		for(index_ch=0;	index_ch<4;	index_ch++)
 		{
-			// add_PLF(&plnf[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);//Êá×ÓÂË²¨Æ÷
-			COMB_Filter(&comb_filter_array[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);
-			// IIR_Filter(&iir_filter_array[index_ch], ADS1299_Data2[index_ch+1], &result);		// butterworthÂË²¨Æ÷
+			add_PLF(&plnf[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);//ï¿½ï¿½ï¿½ï¿½ï¿½Ë²ï¿½ï¿½ï¿½
+			// COMB_Filter(&comb_filter_array[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);
+			// IIR_Filter(&iir_filter_array[index_ch], ADS1299_Data2[index_ch+1], &result);		// butterworthï¿½Ë²ï¿½ï¿½ï¿½
 			IIR_Filter(&iir_filter_array[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);
 			// printf("%f\n", result);
-			temp = (ADS1299_Data2[index_ch+1]>>(lsbshift+4)); //ÒÆ¶¯µÄ¾ßÌåÎ»ÊýÐèÒªÈ·¶¨£¬12£¿ lsbshift=8£¿ ÎªÊ²Ã´±£ÁôÖÐ¼äµÄÎ»Êý£¬ÉáÆúÄ©Î²¿ÉÒÔÀí½â£¬µ«ÎªºÎÉáÆú¸ßÎ»
+			temp = (ADS1299_Data2[index_ch+1]>>(lsbshift+4)); //ï¿½Æ¶ï¿½ï¿½Ä¾ï¿½ï¿½ï¿½Î»ï¿½ï¿½ï¿½ï¿½ÒªÈ·ï¿½ï¿½ï¿½ï¿½12ï¿½ï¿½ lsbshift=8ï¿½ï¿½ ÎªÊ²Ã´ï¿½ï¿½ï¿½ï¿½ï¿½Ð¼ï¿½ï¿½Î»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä©Î²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½â£?ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î»
 			// IIR_Filter(&iir_filter_array[index_ch], (int16_t)temp, &result);
 			// temp = (unsigned short)result;
 			temp = (unsigned short)temp;
@@ -379,24 +383,57 @@ void dataAcq(void)
 		
 		EMG_Data2[index_ch]= (uint16_t)(temp&0xFFF);
 		}
-		// ¸Ð¾õÉÏÃæµÄ²»¶Ô£¬ÏÂÃæ°´×Ô¼ºµÄÀí½âÐÞ¸ÄÒ»ÏÂ£º
+		// ï¿½Ð¾ï¿½ï¿½ï¿½ï¿½ï¿½Ä²ï¿½ï¿½Ô£ï¿½ï¿½ï¿½ï¿½æ°´ï¿½Ô¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Þ¸ï¿½Ò»ï¿½Â£ï¿?
 		// int dataNow;
 		// for(index_ch=0;	index_ch<4;	index_ch++)
 		// {
-		// 	add_PLF(&plnf[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);//Êá×ÓÂË²¨Æ÷
+		// 	add_PLF(&plnf[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);//ï¿½ï¿½ï¿½ï¿½ï¿½Ë²ï¿½ï¿½ï¿½
 		// 	dataNow = ADS1299_Data2[index_ch+1];
 		// 	printf("%d\r\n", dataNow);
 		// }
-		// xSemaphoreTake(xSemaphore, portMAX_DELAY);		// µÈ´ý»¥³âÁ¿
+		// xSemaphoreTake(xSemaphore, portMAX_DELAY);		// ï¿½È´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 		EMGSaveData(EMG_Data2);
-		// xSemaphoreGive(xSemaphore);		// »¥³âÐÅºÅÁ¿ÊÍ·Å
+		// xSemaphoreGive(xSemaphore);		// ï¿½ï¿½ï¿½ï¿½ï¿½Åºï¿½ï¿½ï¿½ï¿½Í·ï¿½
 		// sendPackage(EMG_Data2);
 		// delay_ms(2);
 	}
 
 }
 
-// return Ö¸ÏòÊý×éµÄÖ¸Õë
+void dataAcq_16bit(void)
+{
+	int index_ch;
+	int temp;
+	int16_t result = 0;
+	if(!(GET_DRDY2))
+	{
+		ADS1299_READ(2);
+		
+		for(index_ch=0;	index_ch<4;	index_ch++)
+		{
+			// add_PLF(&plnf[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);//ï¿½ï¿½ï¿½ï¿½ï¿½Ë²ï¿½ï¿½ï¿½
+			COMB_Filter(&comb_filter_array[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);
+			// IIR_Filter(&iir_filter_array[index_ch], ADS1299_Data2[index_ch+1], &result);		// butterworthï¿½Ë²ï¿½ï¿½ï¿½
+			// IIR_Filter(&iir_filter_array[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);
+			// printf("%f\n", result);
+			temp = (ADS1299_Data2[index_ch+1]) >> 4;
+			if(ADS1299_Data2[index_ch+1] < 0)
+				temp|= 0x8000;
+			else
+				temp&= 0x7FFF;
+			// IIR_Filter(&iir_filter_array[index_ch], (int16_t)temp, &result);
+			// temp = (unsigned short)result;
+			int16_t tmp_16bit = (int16_t)temp;
+		
+			EMG_Data_16bit[index_ch]= (int16_t)(tmp_16bit & 0xFFFF);
+		}
+		// xSemaphoreTake(xSemaphore, portMAX_DELAY);		// ï¿½È´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+		EMGSaveData_16bit(EMG_Data_16bit);
+		// xSemaphoreGive(xSemaphore);		// ï¿½ï¿½ï¿½ï¿½ï¿½Åºï¿½ï¿½ï¿½ï¿½Í·ï¿½
+	}
+}
+
+// return Ö¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¸ï¿½ï¿?
 unsigned short* EMGdataAcq(void)
 {
 	int index_ch;
@@ -410,9 +447,9 @@ unsigned short* EMGdataAcq(void)
 		
 		for(index_ch=0;	index_ch<4;	index_ch++)
 		{
-			add_PLF(&plnf[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);//Êá×ÓÂË²¨Æ÷
-			// ÎªÊ²Ã´ÒªÓÒÒÆ
-			temp = (unsigned short)(ADS1299_Data2[index_ch+1]>>(lsbshift+4)); //ÒÆ¶¯µÄ¾ßÌåÎ»ÊýÐèÒªÈ·¶¨£¬12£¿ lsbshift=8£¿ ÎªÊ²Ã´±£ÁôÖÐ¼äµÄÎ»Êý£¬ÉáÆúÄ©Î²¿ÉÒÔÀí½â£¬µ«ÎªºÎÉáÆú¸ßÎ»
+			add_PLF(&plnf[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);//ï¿½ï¿½ï¿½ï¿½ï¿½Ë²ï¿½ï¿½ï¿½
+			// ÎªÊ²Ã´Òªï¿½ï¿½ï¿½ï¿½
+			temp = (unsigned short)(ADS1299_Data2[index_ch+1]>>(lsbshift+4)); //ï¿½Æ¶ï¿½ï¿½Ä¾ï¿½ï¿½ï¿½Î»ï¿½ï¿½ï¿½ï¿½ÒªÈ·ï¿½ï¿½ï¿½ï¿½12ï¿½ï¿½ lsbshift=8ï¿½ï¿½ ÎªÊ²Ã´ï¿½ï¿½ï¿½ï¿½ï¿½Ð¼ï¿½ï¿½Î»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä©Î²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½â£?ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î»
 			if(ADS1299_Data2[index_ch+1]<0)
 				temp|= 0x800;
 			else
@@ -420,9 +457,9 @@ unsigned short* EMGdataAcq(void)
 		
 		EMG_Data2[index_ch]= (uint16_t)(temp&0xFFF);
 		}
-		xSemaphoreTake(xSemaphore, portMAX_DELAY);		// µÈ´ý»¥³âÁ¿
+		xSemaphoreTake(xSemaphore, portMAX_DELAY);		// ï¿½È´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 		EMGSaveData(EMG_Data2);
-		xSemaphoreGive(xSemaphore);		// »¥³âÐÅºÅÁ¿ÊÍ·Å
+		xSemaphoreGive(xSemaphore);		// ï¿½ï¿½ï¿½ï¿½ï¿½Åºï¿½ï¿½ï¿½ï¿½Í·ï¿½
 		sendPackage(EMG_Data2);
 		return EMG_Data2;
 	}
@@ -466,31 +503,31 @@ void sendPackage(unsigned short *theData)
 		sum_emgdata += emgdata_4ch[j];
 	}
 
-	//~ 4ch EMG£¬²âÊÔ8¸ö×Ö½ÚÊý¾Ý´«ÊäÓÃ£¬µÚ1~4¸ö×Ö½ÚÎªËÄ¸öÍ¨µÀµÄÊý¾Ý
+	//~ 4ch EMGï¿½ï¿½ï¿½ï¿½ï¿½ï¿½8ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½Ý´ï¿½ï¿½ï¿½ï¿½Ã£ï¿½ï¿½ï¿½1~4ï¿½ï¿½ï¿½Ö½ï¿½Îªï¿½Ä¸ï¿½Í¨ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	for(j=0;j<4;j++) 
 	{
 		*(EMG_Package+j) = emgdata_4ch[j];
 	}
 
 	
-	*(EMG_Package+4) = sum_emgdata; //~ ºÍÐ£Ñé
-	*(EMG_Package+5) = Package_Number; //~ Êý¾Ý°ü¼ÆÊý
-	*(EMG_Package+6) = 0x0D; //°üÍ·
-	*(EMG_Package+7) = 0x0A; //°üÎ²
+	*(EMG_Package+4) = sum_emgdata; //~ ï¿½ï¿½Ð£ï¿½ï¿½
+	*(EMG_Package+5) = Package_Number; //~ ï¿½ï¿½ï¿½Ý°ï¿½ï¿½ï¿½ï¿½ï¿½
+	*(EMG_Package+6) = 0x0D; //ï¿½ï¿½Í·
+	*(EMG_Package+7) = 0x0A; //ï¿½ï¿½Î²
 	
-//	//~ 4ch EMG£¬²âÊÔ16¸ö×Ö½ÚÊý¾Ý´«ÊäÓÃ£¬Ç°ËÄ¸ö×Ö½ÚÎªËÄ¸öÍ¨µÀµÄÊý¾Ý
+//	//~ 4ch EMGï¿½ï¿½ï¿½ï¿½ï¿½ï¿½16ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½Ý´ï¿½ï¿½ï¿½ï¿½Ã£ï¿½Ç°ï¿½Ä¸ï¿½ï¿½Ö½ï¿½Îªï¿½Ä¸ï¿½Í¨ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 //	for(j=0;j<4;j++) 
 //	{
 //		*(EMG_Package+j) = emgdata_4ch[j];
 //	}
-//	*(EMG_Package+14) = 0x0D; //°üÍ·
-//	*(EMG_Package+15) = 0x0A; //°üÎ²
+//	*(EMG_Package+14) = 0x0D; //ï¿½ï¿½Í·
+//	*(EMG_Package+15) = 0x0A; //ï¿½ï¿½Î²
 	
-	//~ Êý¾Ý´«Êä·½Ê½£¨WiFi+´®¿Ú£©
-//	Wifi_Send_Packet();//~ Ê¹ÓÃWiFi´«ÊäÊý¾Ý£¬ÐèÒªÔ¤ÏÈ¶¨ÒåWiFi´«ÊäµÄEMG_package´óÐ¡
-	USART2_Send_Data(EMG_Package,8);//~ Ê¹ÓÃ´®¿Ú·¢ËÍÊý¾Ý£¬µÚ¶þ¸ö²ÎÊýÎªÐèÒª´«ÊäµÄ×Ö½ÚÊýÄ¿
+	//~ ï¿½ï¿½ï¿½Ý´ï¿½ï¿½ä·½Ê½ï¿½ï¿½WiFi+ï¿½ï¿½ï¿½Ú£ï¿½
+//	Wifi_Send_Packet();//~ Ê¹ï¿½ï¿½WiFiï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý£ï¿½ï¿½ï¿½ÒªÔ¤ï¿½È¶ï¿½ï¿½ï¿½WiFiï¿½ï¿½ï¿½ï¿½ï¿½EMG_packageï¿½ï¿½Ð¡
+	USART2_Send_Data(EMG_Package,8);//~ Ê¹ï¿½Ã´ï¿½ï¿½Ú·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý£ï¿½ï¿½Ú¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Îªï¿½ï¿½Òªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½Ä?
 	
-	//~ Í¨¹ýÅÐ¶Ï°üµÄÊýÖµ£¬¿ÉÒÔÖªµÀÊý¾Ý´«Êä¹ý³ÌÖÐÊÇ·ñ´æÔÚ¶ª°üÎÊÌâ£¬ÀýÈç£¬¿ÉÒÔ½«ÊýÖµÔÚÉÏÎ»»úÖÐ»­³ö²¨ÐÎ£¬¸üÈÝÒ×Ö±¹Û¿´³öÐ§¹û
+	//~ Í¨ï¿½ï¿½ï¿½Ð¶Ï°ï¿½ï¿½ï¿½ï¿½ï¿½Öµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Öªï¿½ï¿½ï¿½ï¿½ï¿½Ý´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ç·ï¿½ï¿½ï¿½Ú¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½â£¬ï¿½ï¿½ï¿½ç£¬ï¿½ï¿½ï¿½Ô½ï¿½ï¿½ï¿½Öµï¿½ï¿½ï¿½ï¿½Î»ï¿½ï¿½ï¿½Ð»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö±ï¿½Û¿ï¿½ï¿½ï¿½Ð§ï¿½ï¿½
 	Package_Number++;
 	if(Package_Number > 256)
 	{
@@ -502,7 +539,7 @@ void sendPackage(unsigned short *theData)
  void USART2_Send_Data(uint8_t* data_buffer,uint16_t bytes_num)
  {
 	 
-			HAL_UART_Transmit(&UART2_Handler, (uint8_t*)data_buffer, bytes_num, 1000);//~ µÚÈý¸ö²ÎÊý´ú±í´«ÊäµÄ×Ü×Ö½ÚÊý
+			HAL_UART_Transmit(&UART2_Handler, (uint8_t*)data_buffer, bytes_num, 1000);//~ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿?
 			while(__HAL_UART_GET_FLAG(&UART2_Handler,UART_FLAG_TC)!=SET);
 		 
  }
@@ -547,10 +584,22 @@ void EMGSaveData(unsigned short* EMGdata)
 	}
 }
 
-// ÎªÁËÔÝÊ±Ê¹ÓÃsendPackage(),ÓÃÏÂÃæµÄ¶«Î÷£¬²»ÒªÒÆÎ»£¬ÓÃÐÂÉÏÎ»»úÊ±¸Ä³ÉÉÏÃæµÄ
+void EMGSaveData_16bit(int16_t* EMGdata)
+{
+	for(int i = 0; i < 4; ++i)
+	{
+		int16_t temp = EMG_Data_16bit[i] & 0xFFFF;
+		if(!pushCircleQueue(EMGCircleQueueArray[i], (int16_t)temp))
+		{
+			usart3_SendPackage(errorMessage, ERROR_PACKAGE_SIZE);
+		}
+	}
+}
+
+// Îªï¿½ï¿½ï¿½ï¿½Ê±Ê¹ï¿½ï¿½sendPackage(),ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò?ï¿½ï¿½Î»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î»ï¿½ï¿½Ê±ï¿½Ä³ï¿½ï¿½ï¿½ï¿½ï¿½ï¿?
 // void EMGSaveData(unsigned short* EMGdata)
 // {
-// 	// Ö»test2¸ö
+// 	// Ö»test2ï¿½ï¿½
 // 	for(int i = 0; i < 4; ++i)
 // 	{
 // 		int16_t temp = EMGdata[i];
@@ -559,7 +608,7 @@ void EMGSaveData(unsigned short* EMGdata)
 // 	}
 // }
 
-// ²»ÒªÒÆÎ»
+// ï¿½ï¿½Òªï¿½ï¿½Î»
 void dataAcq_24bit(void)
 {
 	int index_ch;
@@ -572,9 +621,9 @@ void dataAcq_24bit(void)
 		
 		for(index_ch=0;	index_ch<4;	index_ch++)
 		{
-			add_PLF(&plnf[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);//Êá×ÓÂË²¨Æ÷
+			add_PLF(&plnf[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);//ï¿½ï¿½ï¿½ï¿½ï¿½Ë²ï¿½ï¿½ï¿½
 			// COMB_Filter(&comb_filter_array[index_ch], ADS1299_Data2[index_ch+1], &ADS1299_Data2[index_ch+1]);
-			// IIR_Filter(&iir_filter_array[index_ch], ADS1299_Data2[index_ch+1], &result);		// butterworthÂË²¨Æ÷
+			// IIR_Filter(&iir_filter_array[index_ch], ADS1299_Data2[index_ch+1], &result);		// butterworthï¿½Ë²ï¿½ï¿½ï¿½
 			// printf("%f\n", result);
 			temp = ADS1299_Data2[index_ch+1];
 			EMG_24bit[index_ch * 4]= (temp >> 24) & 0xFF;
@@ -585,7 +634,7 @@ void dataAcq_24bit(void)
 		sendPackage_24bit(EMG_24bit);
 	}
 }
-// ´«ÊäÍêÕûµÄ24Î»¼¡µçÊý¾Ý
+// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½24Î»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 void sendPackage_24bit(char *theData)
 {
 	int j;
@@ -601,14 +650,14 @@ void sendPackage_24bit(char *theData)
 	}
 
 	
-	EMG_Package_24bit[16] = sum_emgdata; //~ ºÍÐ£Ñé
-	EMG_Package_24bit[17] = Package_Number; //~ Êý¾Ý°ü¼ÆÊý
-	EMG_Package_24bit[18] = 0x0D; //°üÍ·
-	EMG_Package_24bit[19] = 0x0A; //°üÎ²
+	EMG_Package_24bit[16] = sum_emgdata; //~ ï¿½ï¿½Ð£ï¿½ï¿½
+	EMG_Package_24bit[17] = Package_Number; //~ ï¿½ï¿½ï¿½Ý°ï¿½ï¿½ï¿½ï¿½ï¿½
+	EMG_Package_24bit[18] = 0x0D; //ï¿½ï¿½Í·
+	EMG_Package_24bit[19] = 0x0A; //ï¿½ï¿½Î²
 	
-	USART2_Send_Data(EMG_Package_24bit, 20);//~ Ê¹ÓÃ´®¿Ú·¢ËÍÊý¾Ý£¬µÚ¶þ¸ö²ÎÊýÎªÐèÒª´«ÊäµÄ×Ö½ÚÊýÄ¿
+	USART2_Send_Data(EMG_Package_24bit, 20);//~ Ê¹ï¿½Ã´ï¿½ï¿½Ú·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý£ï¿½ï¿½Ú¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Îªï¿½ï¿½Òªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½Ä?
 	
-	//~ Í¨¹ýÅÐ¶Ï°üµÄÊýÖµ£¬¿ÉÒÔÖªµÀÊý¾Ý´«Êä¹ý³ÌÖÐÊÇ·ñ´æÔÚ¶ª°üÎÊÌâ£¬ÀýÈç£¬¿ÉÒÔ½«ÊýÖµÔÚÉÏÎ»»úÖÐ»­³ö²¨ÐÎ£¬¸üÈÝÒ×Ö±¹Û¿´³öÐ§¹û
+	//~ Í¨ï¿½ï¿½ï¿½Ð¶Ï°ï¿½ï¿½ï¿½ï¿½ï¿½Öµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Öªï¿½ï¿½ï¿½ï¿½ï¿½Ý´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ç·ï¿½ï¿½ï¿½Ú¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½â£¬ï¿½ï¿½ï¿½ç£¬ï¿½ï¿½ï¿½Ô½ï¿½ï¿½ï¿½Öµï¿½ï¿½ï¿½ï¿½Î»ï¿½ï¿½ï¿½Ð»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö±ï¿½Û¿ï¿½ï¿½ï¿½Ð§ï¿½ï¿½
 	Package_Number++;
 	if(Package_Number > 256)
 	{

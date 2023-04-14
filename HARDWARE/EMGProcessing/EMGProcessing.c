@@ -7,7 +7,8 @@ const int16_t IIR_B[6] = {
 const int16_t IIR_A[6] = {
 		32767, -32768,  32767, -32768,  32767, -21812
 	};
-const float comb_rho = 0.9229897627825;
+const float comb_rho = 0.4601747394;	// 带宽20
+// const float comb_rho = 0.1762159765;	// 带宽30
 float comb_b;
 
 int initial_PLF(PLN_FILER *x)

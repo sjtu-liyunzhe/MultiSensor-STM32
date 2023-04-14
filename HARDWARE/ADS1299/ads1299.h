@@ -47,5 +47,7 @@ unsigned short* EMGdataAcq(void);
 void initErrorMessage();
 void dataAcq_24bit();
 void sendPackage_24bit(char *theData);
+void dataAcq_16bit(void);
+void EMGSaveData_16bit(int16_t* EMGdata);
 
 #endif

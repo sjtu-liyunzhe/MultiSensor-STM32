@@ -30,31 +30,31 @@ extern uint8_t errorMessage[66];
 void GetMPUData(int imuNum, struct mpuData *data)
 {
 	// taskENTER_CRITICAL();           //进入临界区
-	switch (imuNum)
-	{
-	case 0:
-		mpu_dmp_get_data_0(&(data->pitch), &(data->roll), &(data->yaw));
-		break;
-	case 1:
-		mpu_dmp_get_data_1(&(data->pitch), &(data->roll), &(data->yaw));
-		break;
-	case 2:
-		mpu_dmp_get_data_2(&(data->pitch), &(data->roll), &(data->yaw));
-		break;
-	case 3:
-		mpu_dmp_get_data_3(&(data->pitch), &(data->roll), &(data->yaw));
-		break;
-	default:
-		break;
-	}
+	// switch (imuNum)
+	// {
+	// case 0:
+	// 	mpu_dmp_get_data_0(&(data->pitch), &(data->roll), &(data->yaw));
+	// 	break;
+	// case 1:
+	// 	mpu_dmp_get_data_1(&(data->pitch), &(data->roll), &(data->yaw));
+	// 	break;
+	// case 2:
+	// 	mpu_dmp_get_data_2(&(data->pitch), &(data->roll), &(data->yaw));
+	// 	break;
+	// case 3:
+	// 	mpu_dmp_get_data_3(&(data->pitch), &(data->roll), &(data->yaw));
+	// 	break;
+	// default:
+	// 	break;
+	// }
 	delay_ms(1);
 	// int temp = data->pitch * 10;
 	// printf("%d,   ", data->pitch);
 	MPU_Get_Accelerometer(imuNum, &(data->accx), &(data->aacy), &(data->aacz));
 	// delay_ms(50);
 	delay_ms(1);
-	MPU_Get_Gyroscope(imuNum, &(data->gyrox), &(data->gyrox), &(data->gyroz));
-	delay_ms(1);
+	// MPU_Get_Gyroscope(imuNum, &(data->gyrox), &(data->gyrox), &(data->gyroz));
+	// delay_ms(1);
 	// taskENTER_CRITICAL();           //进入临界区
 	// data->temp = MPU_Get_Temperature(imuNum);
 	// taskEXIT_CRITICAL();            //退出临界区
@@ -177,9 +177,12 @@ void IMUSendData(int imuNum, struct mpuData *data)
 }
 void IMUSaveData(int imuNum, mpuData* data)
 {
-	int16_t tempRoll = 100 * data->roll;
-	int16_t tempPitch = 100 * data->pitch;
-	int16_t tempYaw = 100 * data->yaw;
+	// int16_t tempRoll = 100 * data->roll;
+	// int16_t tempPitch = 100 * data->pitch;
+	// int16_t tempYaw = 100 * data->yaw;
+	int16_t tempRoll = data->accx;
+	int16_t tempPitch = data->aacy;
+	int16_t tempYaw = data->aacz;
 	if(!pushCircleQueue(IMUCircleQueueArray[imuNum]->rowQueue, tempRoll))
 	{
 		printf("imu rowQueue[%d] push fails", imuNum);

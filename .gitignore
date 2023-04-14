@@ -1,1 +1,12 @@
 OBJ
+USER/DebugConfig
+USER/Listings
+*.uvoptx
+*.jpg
+*.JPG
+*.ishield
+*.liyunzhe
+*.User
+*.txt
+*.ini
+*.TMP

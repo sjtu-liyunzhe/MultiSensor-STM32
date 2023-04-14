@@ -54,9 +54,13 @@
 
 #define CIRCLE_SIZE 50
 #define EMG_QUEUE_SIZE 50
+// #define EMG_QUEUE_SIZE 25
 #define IMU_QUEUE_SIZE 10
-#define EMG_SEND_PACKAGE_SIZE 67
-#define IMU_SEND_PACKAGE_SIZE 67
+// #define EMG_SEND_PACKAGE_SIZE 67
+#define EMG_SEND_PACKAGE_SIZE 107
+
+// #define IMU_SEND_PACKAGE_SIZE 67
+#define IMU_SEND_PACKAGE_SIZE 107
 
 // 全局变量
 PLN_FILER plnf[4]; 
@@ -268,16 +272,16 @@ int main(void)
 	    printf("MPU6050_1 Error!!!\r\n");
 		delay_ms(500);
 	}
-	while(mpu_dmp_init_2())
-	{
-	    printf("MPU6050_2 Error!!!\r\n");
-		delay_ms(500);
-	}
-	while(mpu_dmp_init_3())
-	{
-	    printf("MPU6050_3 Error!!!\r\n");
-		delay_ms(500);
-	}
+	// while(mpu_dmp_init_2())
+	// {
+	//     printf("MPU6050_2 Error!!!\r\n");
+	// 	delay_ms(500);
+	// }
+	// while(mpu_dmp_init_3())
+	// {
+	//     printf("MPU6050_3 Error!!!\r\n");
+	// 	delay_ms(500);
+	// }
     printf("MPU6050 OK\r\n");
 	// if(!initQueues())
 	// 	printf("init fails");
@@ -394,7 +398,8 @@ int count = 0;
 u8 led_blink_num;
 void EMG_Timer_Callback(TimerHandle_t xTimer)
 {
-	dataAcq();
+	// dataAcq();
+	dataAcq_16bit();
 	// dataAcq_24bit();
 	led_blink_num++;
 	if(led_blink_num > 200)
@@ -421,6 +426,7 @@ void US_task(void *pvParameters)
 			
 			Start_TIM3();			//Start Timer 3
 			 
+			
 			//Generate excitation pulses
 			CH_TX(Ch_Num);			//Change to transmit mode 首先将pulser切换到发射状态，产生±50V的方波激励
 			BF_FIRE;				//beamformer产生方波信号，传给pulser，用于激励方波
@@ -449,7 +455,8 @@ void US_task(void *pvParameters)
 		
 			while(!Ch_Flag)
 			{
-				vTaskDelay(1);// 保证freeRTOS能够进行系统级别任务切换
+				// vTaskDelay(1);// 保证freeRTOS能够进行系统级别任务切换
+				delay_ms(1);
 			}			//等待标志位，保证每个通道消耗的时间都是12.5ms
 			Ch_Flag = 0;				//Reset the flag of time control for each channel 
 			Stop_TIM3();
@@ -677,14 +684,36 @@ void test_Serial_task(void *pvParameters)
 	while(1)
 	{
 		// printf("int serial\n");
-		for(u8 emgIndex = 0; emgIndex != 4; ++emgIndex)
+		// for(u8 emgIndex = 0; emgIndex != 4; ++emgIndex)
+		// {
+		// 	if(EMGCircleQueueArray[emgIndex]->size > EMG_QUEUE_SIZE)
+		// 	{
+		// 		testSendPackage[1] = emgIndex;
+		// 		for(int i = 0; i < EMG_QUEUE_SIZE; ++i)
+		// 		{
+		// 			testSendPackage[3 + i] = popCircleQueue(EMGCircleQueueArray[emgIndex]);
+		// 		}
+		// 		testSendPackage[EMG_SEND_PACKAGE_SIZE - 4] = EMGPackageNum;
+		// 		usart3_SendPackage(testSendPackage, EMG_SEND_PACKAGE_SIZE);
+		// 		++EMGPackageNum;
+		// 		if(EMGPackageNum > 256)
+		// 			EMGPackageNum = 0;
+		// 		delay_ms(1);
+		// 		// printf("");
+		// 	}
+		// }
+
+		// 传输16bit的EMG数据
+		for(u8 emgIndex = 0; emgIndex < 4; ++emgIndex)
 		{
 			if(EMGCircleQueueArray[emgIndex]->size > EMG_QUEUE_SIZE)
 			{
 				testSendPackage[1] = emgIndex;
 				for(int i = 0; i < EMG_QUEUE_SIZE; ++i)
 				{
-					testSendPackage[3 + i] = popCircleQueue(EMGCircleQueueArray[emgIndex]);
+					int16_t tmp = popCircleQueue(EMGCircleQueueArray[emgIndex]);
+					testSendPackage[3 + 2 * i] = (tmp >> 8) & 0xFF;
+					testSendPackage[4 + 2 * i] = tmp & 0xFF;
 				}
 				testSendPackage[EMG_SEND_PACKAGE_SIZE - 4] = EMGPackageNum;
 				usart3_SendPackage(testSendPackage, EMG_SEND_PACKAGE_SIZE);
@@ -692,7 +721,6 @@ void test_Serial_task(void *pvParameters)
 				if(EMGPackageNum > 256)
 					EMGPackageNum = 0;
 				delay_ms(1);
-				// printf("");
 			}
 		}
 
